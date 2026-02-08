@@ -2,7 +2,8 @@
 # KugelAudio 7B - Official Implementation
 # Optimized for NVIDIA GPU (RTX 5060 Ti)
 
-FROM nvidia/cuda:12.3.1-runtime-ubuntu22.04
+# Gebruik een nieuwere CUDA base image
+FROM nvidia/cuda:12.8.0-runtime-ubuntu22.04
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -40,8 +41,8 @@ WORKDIR /app
 # Copy requirements
 COPY requirements.txt .
 
-# Install PyTorch with CUDA support first
-RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+# Install PyTorch nightly with CUDA 12.8 support (needed for sm_120 / Blackwell)
+RUN pip install --no-cache-dir --pre torch torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
 
 # Install KugelAudio from GitHub (not yet on PyPI)
 RUN pip install --no-cache-dir git+https://github.com/Kugelaudio/kugelaudio-open.git
