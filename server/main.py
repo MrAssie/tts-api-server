@@ -1,19 +1,18 @@
 """
-FastAPI TTS Server
-Supports KugelAudio 7B - High-quality European language TTS
-Optimized for GPU acceleration (CUDA)
+FastAPI TTS Server - KugelAudio 7B
+Official implementation using kugelaudio-open package
+Optimized for NVIDIA GPU (RTX 5060 Ti)
 """
 
 import os
-import io
 import tempfile
 import traceback
-from typing import Optional
 from contextlib import asynccontextmanager
+from typing import Optional
 
 import torch
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 import uvicorn
 
@@ -22,8 +21,11 @@ models = {}
 
 
 def load_kugelaudio_model():
-    """Load KugelAudio 7B model for high-quality European language TTS."""
-    from transformers import AutoModel, AutoTokenizer
+    """Load KugelAudio 7B model using official package."""
+    from kugelaudio_open import (
+        KugelAudioForConditionalGenerationInference,
+        KugelAudioProcessor,
+    )
     
     print("Loading KugelAudio 7B model...")
     print("This may take a while (7B parameters)...")
@@ -31,25 +33,28 @@ def load_kugelaudio_model():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model_name = "kugelaudio/kugelaudio-0-open"
     
-    # Load model and tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModel.from_pretrained(
+    # Load model
+    model = KugelAudioForConditionalGenerationInference.from_pretrained(
         model_name,
-        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-        device_map="auto" if device == "cuda" else None
-    )
+        torch_dtype=torch.bfloat16,
+    ).to(device)
+    model.eval()
     
-    if device == "cpu":
-        model = model.to(device)
+    # Strip encoder weights to save VRAM (only decoders needed for inference)
+    model.model.strip_encoders()
+    
+    # Load processor
+    processor = KugelAudioProcessor.from_pretrained(model_name)
     
     print(f"KugelAudio loaded on {device}")
+    print(f"Available voices: {processor.get_available_voices()}")
+    
     return {
         "model": model,
-        "tokenizer": tokenizer,
+        "processor": processor,
         "device": device,
         "name": "KugelAudio 7B",
-        "supports_voice_cloning": True,
-        "languages": ["de", "en", "fr", "es", "pl", "it", "nl"]  # European languages
+        "languages": ["en", "de", "fr", "es", "it", "pt", "nl", "pl", "ru", "uk", "cs", "ro", "hu", "sv", "da", "fi", "no", "el", "bg", "sk", "hr", "sr", "tr"]
     }
 
 
@@ -80,19 +85,19 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="TTS API Server",
-    description="Multi-model Text-to-Speech API with GPU acceleration",
+    title="KugelAudio TTS Server",
+    description="Text-to-Speech API using KugelAudio 7B",
     version="1.0.0",
     lifespan=lifespan
 )
 
 
 # Pydantic models
-class KugelAudioRequest(BaseModel):
+class TTSRequest(BaseModel):
     text: str = Field(..., description="Text to synthesize", min_length=1, max_length=5000)
-    language: str = Field(default="nl", description="Language code (de, en, fr, es, pl, it, nl)")
-    speaker_wav: Optional[str] = Field(default=None, description="Path to reference audio for voice cloning")
-    temperature: float = Field(default=0.8, ge=0.1, le=1.0, description="Sampling temperature")
+    voice: str = Field(default="default", description="Voice to use (default, warm, clear)")
+    language: str = Field(default="nl", description="Language code")
+    cfg_scale: float = Field(default=3.0, ge=1.0, le=10.0, description="Guidance scale")
 
 
 # API Endpoints
@@ -107,72 +112,58 @@ async def health_check():
     }
 
 
-@app.get("/models")
-async def list_models():
-    """List available TTS models."""
-    available_models = []
+@app.get("/voices")
+async def list_voices():
+    """List available voices."""
+    if "kugel" not in models:
+        raise HTTPException(status_code=503, detail="Model not loaded")
     
-    for model_id, model_info in models.items():
-        available_models.append({
-            "id": model_id,
-            "name": model_info["name"],
-            "device": model_info["device"],
-            "supports_voice_cloning": model_info["supports_voice_cloning"],
-            "languages": model_info["languages"]
-        })
+    processor = models["kugel"]["processor"]
+    voices = processor.get_available_voices()
     
     return {
-        "models": available_models,
-        "total": len(available_models)
+        "voices": voices,
+        "total": len(voices)
     }
 
 
 @app.post("/tts")
-async def tts_kugel(request: KugelAudioRequest):
+async def generate_tts(request: TTSRequest):
     """
     Generate speech using KugelAudio 7B.
-    High-quality European language TTS with voice cloning.
     """
     if "kugel" not in models:
         raise HTTPException(status_code=503, detail="KugelAudio model not loaded")
     
     try:
         model = models["kugel"]["model"]
-        tokenizer = models["kugel"]["tokenizer"]
+        processor = models["kugel"]["processor"]
         device = models["kugel"]["device"]
         
         # Create temp file for output
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             output_path = tmp.name
         
-        # Prepare input
-        inputs = tokenizer(
-            request.text,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=512
-        ).to(device)
+        # Process inputs
+        inputs = processor(
+            text=request.text,
+            voice=request.voice,
+            return_tensors="pt"
+        )
+        inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
         
-        # Generate audio
+        # Generate speech
         with torch.no_grad():
-            # Note: This is a simplified version
-            # Actual implementation depends on KugelAudio's specific API
-            outputs = model.generate(
-                **inputs,
-                temperature=request.temperature,
-                do_sample=True
-            )
+            outputs = model.generate(**inputs, cfg_scale=request.cfg_scale)
         
-        # Save audio (implementation depends on model output format)
-        # This is placeholder - actual code depends on KugelAudio's output format
-        # audio = process_outputs(outputs)
-        # save_audio(audio, output_path)
+        # Save audio
+        processor.save_audio(outputs.speech_outputs[0], output_path)
         
-        # For now, return a placeholder response
-        raise HTTPException(
-            status_code=501,
-            detail="KugelAudio integration requires specific model implementation. Please check kugelaudio-open repository for exact API usage."
+        # Return audio file
+        return FileResponse(
+            output_path,
+            media_type="audio/wav",
+            filename=f"kugelaudio_{hash(request.text)}.wav"
         )
         
     except HTTPException:
@@ -181,31 +172,19 @@ async def tts_kugel(request: KugelAudioRequest):
         raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
 
 
-@app.get("/tts/xtts")
-async def tts_xtts_get(
+@app.get("/tts")
+async def generate_tts_get(
     text: str = Query(..., description="Text to synthesize"),
+    voice: str = Query(default="default", description="Voice to use"),
     language: str = Query(default="nl", description="Language code"),
-    speaker_wav: Optional[str] = Query(default=None, description="Path to reference audio")
+    cfg_scale: float = Query(default=3.0, description="Guidance scale")
 ):
-    """GET endpoint for XTTS (for simple testing)."""
-    request = XTTSRequest(text=text, language=language, speaker_wav=speaker_wav)
-    return await tts_xtts(request)
-
-
-@app.get("/tts/melo")
-async def tts_melo_get(
-    text: str = Query(..., description="Text to synthesize"),
-    language: str = Query(default="NL", description="Language code"),
-    speaker_id: int = Query(default=0, description="Speaker ID"),
-    speed: float = Query(default=1.0, description="Speed multiplier")
-):
-    """GET endpoint for MeloTTS (for simple testing)."""
-    request = MeloTTSRequest(text=text, language=language, speaker_id=speaker_id, speed=speed)
-    return await tts_melo(request)
+    """GET endpoint for TTS (for simple testing)."""
+    request = TTSRequest(text=text, voice=voice, language=language, cfg_scale=cfg_scale)
+    return await generate_tts(request)
 
 
 if __name__ == "__main__":
-    # Run server
     uvicorn.run(
         "main:app",
         host="0.0.0.0",

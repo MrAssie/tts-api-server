@@ -1,5 +1,6 @@
 # TTS API Server Docker Image
-# KugelAudio 7B - Optimized for NVIDIA GPU (RTX 5060 Ti)
+# KugelAudio 7B - Official Implementation
+# Optimized for NVIDIA GPU (RTX 5060 Ti)
 
 FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
 
@@ -17,9 +18,14 @@ RUN apt-get update && apt-get install -y \
     python3.10-dev \
     git \
     wget \
+    curl \
     libsndfile1 \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
+
+# Install uv (recommended by KugelAudio)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
 
 # Set Python 3.10 as default
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
@@ -31,11 +37,14 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 # Set working directory
 WORKDIR /app
 
-# Copy requirements first (for better caching)
+# Copy requirements
 COPY requirements.txt .
 
-# Install PyTorch with CUDA support
+# Install PyTorch with CUDA support first
 RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Install KugelAudio and dependencies
+RUN pip install --no-cache-dir kugelaudio-open
 
 # Install other dependencies
 RUN pip install --no-cache-dir -r requirements.txt
