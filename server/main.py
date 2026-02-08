@@ -33,11 +33,12 @@ def load_kugelaudio_model():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model_name = "kugelaudio/kugelaudio-0-open"
     
-    # Load model
+    # Load model - use device_map="auto" for better memory management
     model = KugelAudioForConditionalGenerationInference.from_pretrained(
         model_name,
         torch_dtype=torch.bfloat16,
-    ).to(device)
+        device_map="auto",  # Let transformers handle device placement
+    )
     model.eval()
     
     # Strip encoder weights to save VRAM (only decoders needed for inference)
