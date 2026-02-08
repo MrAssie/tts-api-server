@@ -1,5 +1,5 @@
 # TTS API Server Docker Image
-# Optimized for NVIDIA GPU (RTX 5060 Ti)
+# KugelAudio 7B - Optimized for NVIDIA GPU (RTX 5060 Ti)
 
 FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
 
@@ -19,8 +19,6 @@ RUN apt-get update && apt-get install -y \
     wget \
     libsndfile1 \
     ffmpeg \
-    espeak-ng \
-    libespeak-ng1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Set Python 3.10 as default
@@ -42,14 +40,11 @@ RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pyt
 # Install other dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Download unidic dictionary for MeloTTS (required for Japanese)
-RUN python -m unidic download
-
 # Copy application code
 COPY main.py .
 
 # Create cache directories
-RUN mkdir -p /app/.cache/torch /app/.cache/huggingface /app/.cache/tts
+RUN mkdir -p /app/.cache/torch /app/.cache/huggingface
 
 # Expose port
 EXPOSE 8000

@@ -1,6 +1,6 @@
 """
 FastAPI TTS Server
-Supports multiple TTS models: XTTS v2, MeloTTS, and KugelAudio
+Supports KugelAudio 7B - High-quality European language TTS
 Optimized for GPU acceleration (CUDA)
 """
 
@@ -19,46 +19,6 @@ import uvicorn
 
 # Global model cache
 models = {}
-
-
-def load_xtts_model():
-    """Load XTTS v2 model for voice cloning."""
-    from TTS.api import TTS
-    
-    print("Loading XTTS v2 model...")
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    
-    # Load XTTS v2 model
-    tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
-    
-    print(f"XTTS v2 loaded on {device}")
-    return {
-        "tts": tts,
-        "device": device,
-        "name": "XTTS v2",
-        "supports_voice_cloning": True,
-        "languages": ["en", "es", "fr", "de", "it", "pt", "pl", "tr", "ru", "nl", "cs", "ar", "zh", "ja", "hu", "ko"]
-    }
-
-
-def load_melotts_model():
-    """Load MeloTTS model for fast inference."""
-    from melo.api import TTS as MeloTTS
-    
-    print("Loading MeloTTS model...")
-    device = "auto"  # MeloTTS handles device selection
-    
-    # Load MeloTTS - Dutch model
-    model = MeloTTS(language="NL", device=device)
-    
-    print(f"MeloTTS loaded on {device}")
-    return {
-        "tts": model,
-        "device": device,
-        "name": "MeloTTS",
-        "supports_voice_cloning": False,
-        "languages": ["NL", "EN", "ES", "FR", "ZH", "JP", "KR"]
-    }
 
 
 def load_kugelaudio_model():
@@ -103,28 +63,12 @@ async def lifespan(app: FastAPI):
         print(f"CUDA device: {torch.cuda.get_device_name(0)}")
         print(f"CUDA memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
     
-    # Try to load XTTS model
-    try:
-        models["xtts"] = load_xtts_model()
-        print("✓ XTTS v2 loaded successfully")
-    except Exception as e:
-        print(f"✗ Failed to load XTTS v2: {e}")
-        traceback.print_exc()
-    
-    # Try to load MeloTTS model
-    try:
-        models["melo"] = load_melotts_model()
-        print("✓ MeloTTS loaded successfully")
-    except Exception as e:
-        print(f"✗ Failed to load MeloTTS: {e}")
-        traceback.print_exc()
-    
-    # Try to load KugelAudio model (optional - large model)
+    # Load KugelAudio model
     try:
         models["kugel"] = load_kugelaudio_model()
         print("✓ KugelAudio 7B loaded successfully")
     except Exception as e:
-        print(f"✗ Failed to load KugelAudio (optional): {e}")
+        print(f"✗ Failed to load KugelAudio: {e}")
         traceback.print_exc()
     
     print("=" * 50)
@@ -144,19 +88,6 @@ app = FastAPI(
 
 
 # Pydantic models
-class XTTSRequest(BaseModel):
-    text: str = Field(..., description="Text to synthesize", min_length=1, max_length=10000)
-    language: str = Field(default="nl", description="Language code (e.g., nl, en, de)")
-    speaker_wav: Optional[str] = Field(default=None, description="Path to reference audio for voice cloning")
-
-
-class MeloTTSRequest(BaseModel):
-    text: str = Field(..., description="Text to synthesize", min_length=1, max_length=10000)
-    language: str = Field(default="NL", description="Language code (NL, EN, ES, FR, ZH, JP, KR)")
-    speaker_id: int = Field(default=0, description="Speaker ID (0-9)")
-    speed: float = Field(default=1.0, ge=0.5, le=2.0, description="Speech speed multiplier")
-
-
 class KugelAudioRequest(BaseModel):
     text: str = Field(..., description="Text to synthesize", min_length=1, max_length=5000)
     language: str = Field(default="nl", description="Language code (de, en, fr, es, pl, it, nl)")
@@ -196,93 +127,7 @@ async def list_models():
     }
 
 
-@app.post("/tts/xtts")
-async def tts_xtts(request: XTTSRequest):
-    """
-    Generate speech using XTTS v2.
-    Supports voice cloning when speaker_wav is provided.
-    """
-    if "xtts" not in models:
-        raise HTTPException(status_code=503, detail="XTTS model not loaded")
-    
-    try:
-        model = models["xtts"]["tts"]
-        device = models["xtts"]["device"]
-        
-        # Create temp file for output
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            output_path = tmp.name
-        
-        # Generate speech
-        if request.speaker_wav and os.path.exists(request.speaker_wav):
-            # Voice cloning mode
-            model.tts_to_file(
-                text=request.text,
-                speaker_wav=request.speaker_wav,
-                language=request.language,
-                file_path=output_path
-            )
-        else:
-            # Default speaker (no cloning)
-            # XTTS requires a speaker_wav, use a default or raise error
-            raise HTTPException(
-                status_code=400, 
-                detail="XTTS requires speaker_wav for voice cloning. Please provide a valid audio file path."
-            )
-        
-        # Return audio file
-        return FileResponse(
-            output_path,
-            media_type="audio/wav",
-            filename=f"xtts_output_{hash(request.text)}.wav"
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
-
-
-@app.post("/tts/melo")
-async def tts_melo(request: MeloTTSRequest):
-    """
-    Generate speech using MeloTTS.
-    Fast inference, good for Dutch (NL).
-    """
-    if "melo" not in models:
-        raise HTTPException(status_code=503, detail="MeloTTS model not loaded")
-    
-    try:
-        model = models["melo"]["tts"]
-        
-        # Create temp file for output
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            output_path = tmp.name
-        
-        # Generate speech
-        model.tts_to_file(
-            text=request.text,
-            speaker_id=request.speaker_id,
-            output_path=output_path,
-            sdp_ratio=0.2,
-            noise_scale=0.6,
-            noise_scale_w=0.8,
-            speed=request.speed,
-            pbar=None  # Disable progress bar
-        )
-        
-        # Return audio file
-        return FileResponse(
-            output_path,
-            media_type="audio/wav",
-            filename=f"melo_output_{hash(request.text)}.wav"
-        )
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
-
-
-@app.post("/tts/kugel")
+@app.post("/tts")
 async def tts_kugel(request: KugelAudioRequest):
     """
     Generate speech using KugelAudio 7B.
