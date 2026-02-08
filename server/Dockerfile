@@ -43,8 +43,8 @@ COPY requirements.txt .
 # Install PyTorch with CUDA support first
 RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-# Install KugelAudio and dependencies
-RUN pip install --no-cache-dir kugelaudio-open
+# Install KugelAudio from GitHub (not yet on PyPI)
+RUN pip install --no-cache-dir git+https://github.com/Kugelaudio/kugelaudio-open.git
 
 # Install other dependencies
 RUN pip install --no-cache-dir -r requirements.txt
