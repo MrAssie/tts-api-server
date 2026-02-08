@@ -1,0 +1,46 @@
+# TTS API Server Dependencies
+# Optimized for GPU (CUDA) with RTX 5060 Ti
+
+# FastAPI and server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.5.0
+python-multipart>=0.0.6
+
+# PyTorch with CUDA support
+# Install with: pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+torch>=2.1.0
+torchaudio>=2.1.0
+
+# Coqui TTS (XTTS v2)
+TTS>=0.22.0
+
+# MeloTTS
+melotts>=0.1.0
+
+# KugelAudio (Hugging Face Transformers)
+transformers>=4.36.0
+accelerate>=0.25.0
+huggingface-hub>=0.19.0
+
+# Additional dependencies
+einops>=0.7.0
+inflect>=7.0.0
+anyascii>=0.3.2
+pydub>=0.25.1
+numpy>=1.24.0
+
+# For audio processing
+soundfile>=0.12.1
+librosa>=0.10.1
+
+# Text processing
+unidic-lite>=1.0.8
+pykakasi>=2.2.1
+fugashi>=1.3.0
+cn2an>=0.5.22
+jieba>=0.42.1
+pypinyin>=0.50.0
+
+# Utils
+tqdm>=4.66.0
