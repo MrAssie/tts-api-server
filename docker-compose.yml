@@ -5,7 +5,7 @@ services:
     build: ./server
     container_name: tts-api
     ports:
-      - "8000:8000"
+      - "8080:8000"
     deploy:
       resources:
         reservations:

@@ -103,13 +103,13 @@ curl "http://localhost:8000/tts?text=Hallo%20wereld&voice=warm" \
 
 ```bash
 # Health check
-curl http://localhost:8000/health
+curl http://localhost:8080/health
 
 # Lijst stemmen
-curl http://localhost:8000/voices
+curl http://localhost:8080/voices
 
 # TTS met default stem
-curl -X POST http://localhost:8000/tts \
+curl -X POST http://localhost:8080/tts \
   -H "Content-Type: application/json" \
   -d '{"text": "Hallo wereld", "voice": "default"}' \
   --output output.wav
@@ -132,7 +132,7 @@ import requests
 
 # TTS
 response = requests.post(
-    "http://localhost:8000/tts",
+    "http://localhost:8080/tts",
     json={
         "text": "Hallo wereld",
         "voice": "default",
@@ -153,7 +153,7 @@ services:
     build: ./server
     container_name: tts-api
     ports:
-      - "8000:8000"
+      - "8080:8000"
     deploy:
       resources:
         reservations:
