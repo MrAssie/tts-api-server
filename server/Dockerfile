@@ -2,7 +2,7 @@
 # KugelAudio 7B - Official Implementation
 # Optimized for NVIDIA GPU (RTX 5060 Ti)
 
-FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
+FROM nvidia/cuda:12.3.1-runtime-ubuntu22.04
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
